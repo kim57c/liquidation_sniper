@@ -1,19 +1,32 @@
 import os, time, csv, requests
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 
 SYMBOLS = ["BTCUSDT", "ETHUSDT", "SOLUSDT"]
 OUT_DIR = "data/w1_7"
-BASE = "https://fapi.binance.com"
+# 미국 IP 차단을 피하기 위한 대체 도메인 리스트
+BASES = [
+    "https://fapi.binance.com",
+    "https://fapi1.binance.com",
+    "https://fapi2.binance.com",
+    "https://fapi3.binance.com",
+    "https://data-api.binance.vision",
+]
 
 def fetch_force(symbol, start_ms, end_ms, limit=1000):
-    url = f"{BASE}/fapi/v1/allForceOrders"
-    params = {"symbol": symbol, "startTime": start_ms, "endTime": end_ms, "limit": limit}
-    r = requests.get(url, params=params, timeout=15)
-    if r.status_code == 451:
-        url2 = f"{BASE}/fapi/v1/forceOrders"
-        r = requests.get(url2, params=params, timeout=15)
-    r.raise_for_status()
-    return r.json()
+    headers = {"User-Agent": "Mozilla/5.0"}
+    for base in BASES:
+        for path in ["/fapi/v1/allForceOrders", "/fapi/v1/forceOrders"]:
+            url = f"{base}{path}"
+            params = {"symbol": symbol, "startTime": start_ms, "endTime": end_ms, "limit": limit}
+            try:
+                r = requests.get(url, params=params, headers=headers, timeout=15)
+                if r.status_code == 200:
+                    return r.json()
+                print(f"  {base} {r.status_code} fail")
+            except Exception as e:
+                print(f"  {base} error {e}")
+            time.sleep(0.2)
+    raise Exception(f"All bases failed for {symbol} {start_ms}")
 
 def ensure_dir():
     os.makedirs(OUT_DIR, exist_ok=True)
@@ -45,14 +58,6 @@ def append_csv(path, rows):
 
 if __name__ == "__main__":
     ensure_dir()
-    try:
-        ip = requests.get("https://ifconfig.me", timeout=5).text
-        print(f"Runner IP: {ip}")
-        test = requests.get(f"{BASE}/fapi/v1/forceOrders", params={"symbol":"BTCUSDT","limit":1}, timeout=10)
-        print(f"Test forceOrders status: {test.status_code}")
-    except Exception as e:
-        print(f"IP/test failed: {e}")
-
     now_ms = int(datetime.now(timezone.utc).timestamp()*1000)
     seven_days_ago_ms = now_ms - 7*24*3600*1000
 
@@ -69,8 +74,10 @@ if __name__ == "__main__":
                 if data:
                     append_csv(csv_path, data)
                     print(f"  {cur} -> {len(data)} rows")
+                else:
+                    print(f"  {cur} -> 0 rows")
             except Exception as e:
                 print(f"  fetch error {cur}: {e}")
-                time.sleep(2)
+                time.sleep(1)
             cur = end + 1
             time.sleep(0.3)
