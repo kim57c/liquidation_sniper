@@ -1,0 +1,25 @@
+name: collect-w1-7d
+on:
+  schedule:
+    - cron: '*/15 * * * *'
+  workflow_dispatch:
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install requests
+      - run: python collect_w1.py
+      - name: Commit data
+        run: |
+          git config user.name "liq-bot"
+          git config user.email "bot@github.com"
+          git add data/w1_7 || true
+          git diff --cached --quiet && echo "no changes" && exit 0
+          git commit -m "auto: collect $(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+          git push
